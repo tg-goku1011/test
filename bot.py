@@ -11,7 +11,9 @@ Quick start:
   2) Edit BOT_TOKEN / OWNER_ID / ADMIN_IDS below
   3) python bot.py
 """
-
+import json
+import random
+from typing import Optional
 import os
 import json
 import logging
@@ -150,17 +152,42 @@ async def save_data(d: Dict[str, Any]):
     async with STORE_LOCK:
         atomic_write_json(DATA_FILE, d)
 
-async def load_watched() -> Dict[str, Dict[str, List[int]]]:
-    async with WATCH_LOCK:
-        if not os.path.exists(WATCHED_FILE):
-            atomic_write_json(WATCHED_FILE, {})
-            return {}
-        with open(WATCHED_FILE, "r", encoding="utf8") as f:
-            return json.load(f)
+async def load_watched():
+    if not os.path.exists(WATCHED_FILE):
+        return {}
+    with open(WATCHED_FILE, "r") as f:
+        return json.load(f)
+    
+async def save_watched(data):
+    with open(WATCHED_FILE, "w") as f:
+        json.dump(data, f, indent=2)
 
-async def save_watched(data: Dict[str, Dict[str, List[int]]]):
-    async with WATCH_LOCK:
-        atomic_write_json(WATCHED_FILE, data)
+
+async def sample_unseen_media_for_user(user_id: int, channel_id: int, sample_size: int = 20) -> Optional[dict]:
+    """
+    Return a random media item from the given channel that the user hasn't watched yet.
+    """
+    # Load channel messages
+    data_file = f"channel_{channel_id}.json"
+    if not os.path.exists(data_file):
+        return None  # No media collected yet
+
+    with open(data_file, "r") as f:
+        items = json.load(f)
+
+    # Load watched data
+    watched = await load_watched()
+    user_watched = set(watched.get(str(user_id), {}).get(str(channel_id), []))
+
+    # Filter unseen items
+    unseen = [item for item in items if str(item["message_id"]) not in user_watched]
+    if not unseen:
+        return None
+
+    # Sample one randomly (or first, up to sample_size)
+    sample_pool = unseen[:sample_size]
+    return random.choice(sample_pool)
+
 
 async def mark_watched(user_id: int, channel_id: int, message_id: int):
     data = await load_watched()
